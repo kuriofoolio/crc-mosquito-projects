@@ -1,0 +1,4 @@
+group,n_animals,mean_activity,median_activity,sd_activity,min_activity,max_activity
+Female virgin,12,525.508333333333,391.15,397.058398403087,23.4,1416.6
+Male,8,454.95,460.55,190.638558534206,141.7,723.3
+Mated female,12,516.3,567.95,295.049441157364,42.3,1190.3

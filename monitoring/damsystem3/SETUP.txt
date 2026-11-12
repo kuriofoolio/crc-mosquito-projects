@@ -1,0 +1,157 @@
+DAMSystem3 alerts on macOS
+
+This package has been prepared, not activated. It is configured for monitors 13 through 20 in
+/Users/otousalab/Desktop/DAMSystem3Data, with one-minute readings.
+It needs two Healthchecks.io checks before it can notify anyone. Install it on the Mac
+that records the experiment. Monitoring only an exported or Drive-synced copy
+can hide or introduce delays.
+
+WHAT IT DOES
+
+Every minute, a launchd user agent runs the script. It sends a computer/task
+heartbeat, then checks all configured live Monitor files for recent, complete,
+valid count records. It sends a recording success only if ALL expected monitors
+pass. Stale, missing or invalid data cause a recording failure signal. A frozen
+Mac, shutdown, logout, sleep or network outage prevents heartbeats; the external
+service detects their absence and sends the alert.
+
+It reads data without modifying them and does not restart DAMSystem3. It does
+not need an email password and does not upload activity counts. Diagnostic
+messages sent to Healthchecks contain monitor IDs and freshness/error details.
+It checks the standard 42-column count format used by your Monitor13/20 files.
+Other DAM acquisition formats need a reader adjustment before use.
+
+1. CREATE THE TWO EXTERNAL CHECKS
+
+At https://healthchecks.io/ create these separate checks:
+  - Lab recording Mac heartbeat
+  - DAMSystem3 live recording
+
+For each, choose Simple schedule, Period = 1 minute, Grace Time = 2 minutes.
+The heartbeat becomes late about 3 minutes after its last success, plus service
+and notification delivery time. The recording check also receives /fail as
+soon as a polling run detects unhealthy data. Defaults allow records up to
+180 seconds old. Choose a larger data-age limit if DAMSystem3 saves to disk
+less frequently; first observe the actual live file-writing cadence.
+
+In Integrations, add and verify your email. Optionally add a phone channel
+such as Pushover or SMS and enable it for BOTH checks. SMS/call availability
+and quotas depend on the plan; test delivery to the actual phone. Pushover
+uses phone internet access. Do not assume a dashboard entry alone proves
+notifications reach you. Add a second recipient if appropriate.
+
+Copy each check's HTTPS UUID Ping URL, not its browser dashboard URL or an API
+management key. Keep these URLs private because they can be used to forge
+healthy pings. The supplied script accepts https://hc-ping.com/<uuid> URLs.
+
+2. CONFIGURE ON THE RECORDING MAC
+
+Copy this whole folder to the recording Mac. In Terminal, enter that folder:
+  cd "/path/to/damsystem3"
+  chmod 600 config.zsh
+  open -e config.zsh
+
+The supplied config.zsh already lists Monitor13.txt through Monitor20.txt
+in /Users/otousalab/Desktop/DAMSystem3Data. Confirm those exact filenames
+exist and receive fresh records. Change paths only if the live folder changes.
+config.example.zsh is a spare copy of the initial configuration.
+
+Paste the two Ping URLs and set MAX_DATA_AGE_SECONDS. DAM_TIMEZONE normally
+stays empty, meaning the recording Mac's local timezone. The file timestamps
+must agree with that timezone and clock. If the instrument writes another
+timezone, set its IANA name and verify a healthy dry run.
+
+Run a read-only check; this sends no notifications:
+  /bin/zsh -f ./dam-watch.zsh --config "$PWD/config.zsh" --dry-run
+
+All configured monitors must report OK and RECORDING HEALTHY. Zero beam breaks
+are valid and will not trigger an alert. A recent invalid row does not mask an
+older stale valid record. A partially written row is ignored while the preceding
+complete valid record is still fresh. Missing files fail immediately.
+
+3. ENABLE AUTOMATIC CHECKS
+
+Only after the healthy dry run and verified notification settings, run:
+  /bin/zsh -f ./install.zsh "$PWD/config.zsh"
+
+This copies the script and private configuration into:
+  ~/Library/Application Support/DAMWatch/
+and creates:
+  ~/Library/LaunchAgents/org.lab.damwatch.plist
+
+The job runs immediately and every 60 seconds while that user is logged in.
+It starts again at the next login. It does NOT run at the login screen after a
+reboot; the missing heartbeat should continue to alert until someone logs in.
+Screen locking is fine; logging out stops this user agent. Installation must
+be run from the recording user's normal logged-in macOS session.
+
+Verify BOTH checks become Up in the Healthchecks dashboard. If the monitor
+cannot read a Desktop/Documents/external-drive data folder, resolve macOS
+privacy permissions for the actual background job and verify from its logs.
+An interactive Terminal test alone does not prove launchd has the same access.
+
+Logs:
+  ~/Library/Logs/DAMWatch/watch.log
+  ~/Library/Logs/DAMWatch/errors.log
+Status:
+  launchctl print "gui/$(id -u)/org.lab.damwatch"
+
+Changing paths or instruments later: edit the installed config.zsh, run the
+installed script with --dry-run, then check the next automatic run. Keep both
+checks paused while an experiment is intentionally stopped. Resume both when
+the next experiment starts and confirm new pings arrive.
+
+4. TEST BEFORE THE NEXT EXPERIMENT
+
+Do these tests outside a valuable live experiment; confirm the actual email
+and phone notifications, then recovery notifications.
+
+  A. Close DAMSystem3. The Mac heartbeat should continue, but the recording
+     check should fail after the last valid record exceeds the age limit,
+     plus up to one polling interval. Restart recording and confirm recovery.
+  B. Disconnect the Mac's network. Both heartbeats should go late. Restore
+     connectivity and confirm recovery. This tests the missed-heartbeat route.
+  C. Shut down the Mac normally during a test. Confirm the external service
+     alerts. After boot and user login, verify DAMSystem3 is recording again
+     and both checks recover. Do not intentionally induce a system crash.
+  D. With multiple monitors, briefly disconnect one test instrument and verify
+     it cannot be hidden by another monitor that continues writing valid data.
+
+A missing heartbeat does not prove a computer crash; sleep, logout, network
+loss, power loss or failure of this monitoring task can produce the same alert.
+The recording check covers fresh status-1 data, not biological activity,
+animal survival, correct lighting, or every possible hardware/sensor failure.
+
+Disable CPU sleep during acquisition using the Mac's settings; TriKinetics
+explicitly recommends this for long recordings. A UPS for the recording Mac,
+monitor interface/power supply and networking equipment can reduce interruptions.
+Phone alerts are a response tool; they cannot recover data never recorded.
+
+5. STOP AUTOMATIC MONITORING
+
+First pause both checks in Healthchecks for planned downtime, then run:
+  launchctl bootout "gui/$(id -u)/org.lab.damwatch"
+  rm "$HOME/Library/LaunchAgents/org.lab.damwatch.plist"
+
+The script and logs remain for reference. No files in the recording folder
+are deleted or changed. Review or trim log files between experiments.
+
+REFERENCE DOCUMENTATION
+
+TriKinetics DAMSystem3 data sheet (recording cadence, format and sleep settings):
+https://trikinetics.com/Downloads/DAMSystem3%20Software%20Data%20Sheet.pdf
+Apple launchd user agents (run only while the user is logged in):
+https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html
+Healthchecks scheduling:
+https://healthchecks.io/docs/configuring_checks/
+Healthchecks success/failure ping API:
+https://healthchecks.io/docs/http_api/
+Healthchecks notification channels:
+https://healthchecks.io/docs/configuring_notifications/
+
+OFFLINE VERIFICATION
+
+The optional test_watch.py uses Python's standard library to test failure
+handling. Python is needed only for these developer tests; the watcher and
+installer use built-in macOS tools and do not require Python or R.
+  python3 test_watch.py
